@@ -433,14 +433,19 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
     # Prefer best quality: bestvideo*+bestaudio/bestvideo+bestaudio/best/bestvideo/bestaudio
     # This prioritizes highest resolution available (up to 4K/8K if available)
     safe_fmt = fmt or "bestvideo[height<=2160]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/bestvideo/bestaudio"
+    
+    # For TikTok, try different extractors if quality is too low
+    if 'tiktok.com' in url.lower() and not fmt:
+        # Try using mobile app API format
+        safe_fmt = "bestvideo[height>=720]+bestaudio/bestvideo+bestaudio/best"
 
     # Build player_client list based on available JS runtime.
     # With Deno/Node: use "web" first — it gets the best formats and Deno solves the n-challenge.
     # Without any JS runtime: skip "web" and use clients that don't require JS challenge solving.
     if _HAS_DENO or _HAS_NODE:
-        player_clients = ["web", "web_creator", "mweb", "web_music", "web_embedded"]
+        player_clients = ["web", "web_creator", "mweb", "web_music", "web_embedded", "android", "ios", "tv"]
     else:
-        player_clients = ["web_creator", "mweb", "web_music", "web_embedded"]
+        player_clients = ["web_creator", "mweb", "web_music", "web_embedded", "android", "ios", "tv"]
 
     # Core options
     opts = {
@@ -456,7 +461,14 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
         "extractor_args": {
             "youtube": {
                 "player_client": player_clients,
-            }
+            },
+            "tiktok": {
+                "api_hostname": "api22-normal-c-useast2a.tiktokv.com",
+                "app_version": "35.1.0",
+                "manifest_app_version": "35.1.0",
+                # Try mobile API to get better quality
+                "use_mobile_api": True,
+            },
         },
     }
 
@@ -562,11 +574,16 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
     try:
         with yt_dlp.YoutubeDL({
             "quiet": True, "skip_download": True,
-            "format": "bestvideo[height<=2160]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/any",
+            "format": "bestvideo[height>=1080]+bestaudio/bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best/any",
             "format_sort": ["res:1080", "res", "fps", "vcodec:h264", "acodec:aac"],
             "extractor_args": {
                 "youtube": {
                     "player_client": (["web"] + ["web_creator", "mweb", "web_music", "web_embedded"]) if (_HAS_DENO or _HAS_NODE) else ["web_creator", "mweb", "web_music", "web_embedded"],
+                },
+                "tiktok": {
+                    "api_hostname": "api22-normal-c-useast2a.tiktokv.com",
+                    "app_version": "35.1.0",
+                    "manifest_app_version": "35.1.0",
                 },
                 **( {"jsc": {"js_runtimes": [f"deno:{_DENO_PATH.replace(chr(92), '/')}"], "remote_components": ["ejs:github"]}} if _HAS_DENO and _DENO_PATH
                     else {"jsc": {"js_runtimes": ["node:" + (shutil.which("node") or "node")], "remote_components": ["ejs:github"]}} if _HAS_NODE
@@ -615,7 +632,7 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
             job["stage"] = "Failed"
             return
         if format_error:
-            fallback_formats = ["bestvideo+bestaudio/best", "bestvideo[height<=1080]+bestaudio/best", "best", "bestvideo/best"]
+            fallback_formats = ["bestvideo[height>=1080]+bestaudio/best", "bestvideo+bestaudio/best", "best", "bestvideo/best"]
             success = False
             for fallback_fmt in fallback_formats:
                 print(f"Trying fallback format: {fallback_fmt}")
@@ -626,6 +643,11 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
                         "player_client": (["web"] + ["web_creator", "mweb", "web_music", "web_embedded"])
                                           if (_HAS_DENO or _HAS_NODE)
                                           else ["web_creator", "mweb", "web_music", "web_embedded"],
+                    },
+                    "tiktok": {
+                        "api_hostname": "api22-normal-c-useast2a.tiktokv.com",
+                        "app_version": "35.1.0",
+                        "manifest_app_version": "35.1.0",
                     },
                     **( {"jsc": {"js_runtimes": [f"deno:{_DENO_PATH.replace(chr(92), '/')}"], "remote_components": ["ejs:github"]}} if _HAS_DENO and _DENO_PATH
                         else {"jsc": {"js_runtimes": ["node:" + (shutil.which("node") or "node")], "remote_components": ["ejs:github"]}} if _HAS_NODE

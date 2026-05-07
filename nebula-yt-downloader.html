@@ -2180,6 +2180,15 @@
       </div>
     </div>
 
+    <div class="settings-section-title" style="margin-top:16px;">Server Connection</div>
+    <div class="settings-row">
+      <div class="settings-row-left">
+        <div class="settings-row-title">Server URL</div>
+        <div class="settings-row-sub">Connected to VibeSave server</div>
+      </div>
+      <input class="settings-input" type="text" value="https://vibesave.onrender.com" readonly style="background:var(--bg3);color:var(--muted);">
+    </div>
+
     <div class="settings-section-title" style="margin-top:16px;">Danger Zone</div>
     <div class="settings-row" style="cursor:pointer;" onclick="clearHistory()">
       <div class="settings-row-left">
@@ -2607,8 +2616,10 @@ async function downloadTrimmed() {
   btn.disabled = true;
   btn.textContent = '⏳ Downloading…';
 
-  const fmt = QUALITY_PRESETS[currentPreset].format;
-  const mp3 = QUALITY_PRESETS[currentPreset].mp3;
+  const presetKey = currentPreset || 'auto';
+  const presetCfg = QUALITY_PRESETS[presetKey] || QUALITY_PRESETS['auto'];
+  const fmt = presetCfg.format;
+  const mp3 = presetCfg.mp3;
 
   try {
     const resp = await fetch(`${serverUrl}/trim`, {
@@ -2667,7 +2678,7 @@ async function downloadTrimmed() {
 
 // ─── State ───
 let isDownloading = false;
-let serverUrl = '';
+let serverUrl = 'https://vibesave.onrender.com';
 let prefs = { 
   autoPaste: true, 
   haptic: true, 
@@ -2794,7 +2805,8 @@ function startDownload() {
   if (!url) { showToast('Please paste a social media URL', 'error'); return; }
   if (!serverUrl) { showToast('Enter your server address first', 'error'); return; }
 
-  const presetConfig = QUALITY_PRESETS[currentPreset];
+  const presetKey = currentPreset || 'auto';
+  const presetConfig = QUALITY_PRESETS[presetKey] || QUALITY_PRESETS['auto'];
   const fmt = presetConfig.format;
   const postprocess = presetConfig.mp3;
 
@@ -2877,10 +2889,11 @@ function resetDownload() {
 }
 
 function setDownloadingUI(loading) {
-  const btn = document.getElementById('dlBtn');
+  const btn = document.getElementById('dlDeviceBtn');
+  if (!btn) return;
   btn.disabled = loading;
   btn.classList.toggle('loading', loading);
-  btn.querySelector('.dl-btn-text').textContent = loading ? 'DOWNLOADING' : 'START DOWNLOAD';
+  btn.querySelector('.dl-btn-text').textContent = loading ? 'DOWNLOADING' : 'DOWNLOAD TO DEVICE';
 }
 
 function showProgress(show) {
@@ -2915,12 +2928,16 @@ function isMobileDevice() {
 }
 
 function downloadToDevice() {
-  if (isDownloading) return;
+  console.log('downloadToDevice clicked', { isDownloading, serverUrl });
+  if (isDownloading) { console.log('Already downloading, returning'); return; }
   const url = document.getElementById('urlInput').value.trim();
+  console.log('URL:', url);
   if (!url) { showToast('Please paste a social media URL', 'error'); return; }
   if (!serverUrl) { showToast('Enter your server address first', 'error'); return; }
 
-  const presetConfig = QUALITY_PRESETS[currentPreset];
+  // Safety check for quality presets
+  const presetKey = currentPreset || 'auto';
+  const presetConfig = QUALITY_PRESETS[presetKey] || QUALITY_PRESETS['auto'];
   const fmt = presetConfig.format;
   const mp3 = presetConfig.mp3;
 
@@ -2931,13 +2948,19 @@ function downloadToDevice() {
   log('Starting download (to device)…', 'info');
   setStatus('Connecting to server…', false);
 
+  console.log('Fetching from:', `${serverUrl}/download`, 'with format:', fmt);
+  
   fetch(`${serverUrl}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, format: fmt, mp3: mp3, platform: selectedPlatform })
   })
-  .then(res => res.json())
+  .then(res => {
+    console.log('Response status:', res.status);
+    return res.json();
+  })
   .then(data => {
+    console.log('Response data:', data);
     if (!data.job_id) throw new Error(data.error || 'Server error');
     jobId = data.job_id;
     log('Job started — ' + jobId, 'info');
@@ -2965,6 +2988,7 @@ function downloadToDevice() {
     }, 700);
   })
   .catch(err => {
+    console.error('Download error:', err);
     log('Error: ' + err.message, 'error');
     showToast('Could not reach server', 'error');
     setStatus('Connection failed', false);
@@ -2972,11 +2996,11 @@ function downloadToDevice() {
   });
 }
 
-function fetchFileForJob(jobId, lastStatus, presetConfig) {
+function fetchFileForJob(jobIdParam, lastStatus, presetConfig) {
   setStatus('Preparing download...', true);
   log('Preparing transfer to device...', 'info');
 
-  fetch(`${serverUrl}/download_job/${jobId}`)
+  fetch(`${serverUrl}/download_job/${jobIdParam}`)
     .then(resp => {
       if (!resp.ok) throw new Error('Failed to fetch file');
       // Try to determine filename from Content-Disposition
@@ -3036,7 +3060,7 @@ function fetchFileForJob(jobId, lastStatus, presetConfig) {
             resetDownload();
             
             // Delete file from server to free up space
-            fetch(`${serverUrl}/delete_job/${jobId}`, { method: 'POST' })
+            fetch(`${serverUrl}/delete_job/${jobIdParam}`, { method: 'POST' })
               .then(() => console.log('Server file deleted'))
               .catch(err => console.log('Failed to delete server file:', err));
             
@@ -3518,7 +3542,8 @@ function startBatchDownload() {
   
   showToast(`Starting batch download of ${urls.length} URLs...`, 'info');
   
-  const presetConfig = QUALITY_PRESETS[currentPreset];
+  const presetKey = currentPreset || 'auto';
+  const presetConfig = QUALITY_PRESETS[presetKey] || QUALITY_PRESETS['auto'];
   
   const requestBody = {
     urls: urls,
