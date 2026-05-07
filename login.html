@@ -581,10 +581,11 @@
       }
     }
     
-    // Initialize particles
+    // Initialize particles (reduced count for performance)
     (function initParticles() {
       const container = document.getElementById('particles');
-      const count = 30;
+      const count = 15; // Reduced from 30 for better performance
+      const fragment = document.createDocumentFragment();
       for (let i = 0; i < count; i++) {
         const p = document.createElement('div');
         p.className = 'particle';
@@ -592,8 +593,9 @@
         p.style.animationDuration = (Math.random() * 15 + 20) + 's';
         p.style.animationDelay = (Math.random() * 20) + 's';
         p.style.opacity = Math.random() * 0.5 + 0.3;
-        container.appendChild(p);
+        fragment.appendChild(p);
       }
+      container.appendChild(fragment);
     })();
   </script>
 </body>

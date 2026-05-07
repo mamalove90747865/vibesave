@@ -111,8 +111,15 @@ app = Flask(__name__)
 # Expose Content-Disposition and Content-Length so the client can read filename and size
 CORS(app, expose_headers=["Content-Disposition", "Content-Length"])
 
-# Initialize SocketIO for real-time chat
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# Initialize SocketIO for real-time chat with optimized settings
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', 
+                    ping_timeout=60, ping_interval=25, max_http_buffer_size=1000000)
+
+# Rate limiting for chat messages: user_id -> last_message_timestamp
+chat_rate_limits = {}
+CHAT_RATE_LIMIT_SECONDS = 1  # Minimum seconds between messages
+CHAT_MAX_MESSAGES_PER_MINUTE = 30  # Max messages per minute
+chat_message_counts = {}  # user_id -> [count, window_start]
 
 # ─── Authentication Configuration ─────────────────────────────────────────
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'vibesave-dev-secret-key-change-in-production')
@@ -261,6 +268,13 @@ def init_database():
         )
     ''')
     
+    # Create indexes for faster queries
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_download_history_user_id ON download_history(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_download_history_created_at ON download_history(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+    
     conn.commit()
     conn.close()
     return db_path
@@ -403,8 +417,11 @@ def get_download_stats(user_id=None):
 
 # ─── Chat Functions ───────────────────────────────────────────────────────────
 
+# Max chat messages to keep in database (prevents DB bloat)
+MAX_CHAT_HISTORY = 500
+
 def add_chat_message(user_id, username, avatar_url, message):
-    """Add a chat message to the database"""
+    """Add a chat message to the database and cleanup old messages"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -415,6 +432,10 @@ def add_chat_message(user_id, username, avatar_url, message):
     
     message_id = cursor.lastrowid
     conn.commit()
+    
+    # Cleanup old messages in background (keep only last MAX_CHAT_HISTORY)
+    cleanup_old_messages_async(conn, cursor)
+    
     conn.close()
     
     return {
@@ -426,9 +447,28 @@ def add_chat_message(user_id, username, avatar_url, message):
         'created_at': datetime.utcnow().isoformat()
     }
 
-def get_chat_history(limit=100):
-    """Get recent chat messages"""
+def cleanup_old_messages_async(conn, cursor):
+    """Delete old messages to prevent database bloat"""
+    try:
+        cursor.execute('''
+            DELETE FROM chat_messages 
+            WHERE id NOT IN (
+                SELECT id FROM chat_messages 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            )
+        ''', (MAX_CHAT_HISTORY,))
+        conn.commit()
+    except Exception as e:
+        print(f"Chat cleanup error: {e}")
+
+def get_chat_history(limit=50):
+    """Get recent chat messages (default 50, max 100)"""
+    # Enforce max limit to prevent memory issues
+    limit = min(limit, 100)
+    
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row  # Use Row factory for faster access
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -438,8 +478,7 @@ def get_chat_history(limit=100):
         LIMIT ?
     ''', (limit,))
     
-    columns = [description[0] for description in cursor.description]
-    results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    results = [dict(row) for row in cursor.fetchall()]
     
     conn.close()
     return list(reversed(results))  # Oldest first
@@ -1129,7 +1168,7 @@ def handle_disconnect():
 
 @socketio.on('send_message')
 def handle_send_message(data):
-    """Handle incoming chat message"""
+    """Handle incoming chat message with rate limiting"""
     # Verify user from token
     token = data.get('token', '')
     if not token:
@@ -1141,6 +1180,31 @@ def handle_send_message(data):
         emit('error', {'message': 'Invalid token'})
         return
     
+    user_id = user['user_id']
+    now = time.time()
+    
+    # Rate limiting: Check time between messages
+    last_message_time = chat_rate_limits.get(user_id, 0)
+    if now - last_message_time < CHAT_RATE_LIMIT_SECONDS:
+        emit('error', {'message': f'Please wait {CHAT_RATE_LIMIT_SECONDS}s between messages'})
+        return
+    
+    # Rate limiting: Check messages per minute
+    if user_id in chat_message_counts:
+        count, window_start = chat_message_counts[user_id]
+        if now - window_start > 60:  # Reset window after 60 seconds
+            chat_message_counts[user_id] = [1, now]
+        elif count >= CHAT_MAX_MESSAGES_PER_MINUTE:
+            emit('error', {'message': 'Rate limit: Max 30 messages per minute'})
+            return
+        else:
+            chat_message_counts[user_id][0] += 1
+    else:
+        chat_message_counts[user_id] = [1, now]
+    
+    # Update last message time
+    chat_rate_limits[user_id] = now
+    
     message = data.get('message', '').strip()
     if not message:
         emit('error', {'message': 'Message cannot be empty'})
@@ -1151,11 +1215,11 @@ def handle_send_message(data):
         return
     
     # Get user's avatar
-    avatar_url = get_user_avatar(user['user_id'])
+    avatar_url = get_user_avatar(user_id)
     
     # Save message to database
     msg_data = add_chat_message(
-        user_id=user['user_id'],
+        user_id=user_id,
         username=user['username'],
         avatar_url=avatar_url,
         message=message

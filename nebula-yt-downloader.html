@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2626,7 +2627,8 @@
 // ─── Floating Particles ───
 (function initParticles() {
   const container = document.getElementById('particles');
-  const particleCount = 30;
+  const particleCount = 15; // Reduced from 30 to save DOM performance
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < particleCount; i++) {
     const p = document.createElement('div');
     p.className = 'particle';
@@ -2634,8 +2636,9 @@
     p.style.animationDuration = (Math.random() * 15 + 20) + 's';
     p.style.animationDelay = (Math.random() * 20) + 's';
     p.style.opacity = Math.random() * 0.5 + 0.3;
-    container.appendChild(p);
+    fragment.appendChild(p);
   }
+  container.appendChild(fragment);
 })();
 
 // ─── Logo Easter Egg ───
@@ -2967,6 +2970,12 @@ function initTrimDrag() {
 }
 
 function previewTrim() {
+  // Clear any existing trim check interval
+  if (trimCheckInterval) {
+    clearInterval(trimCheckInterval);
+    trimCheckInterval = null;
+  }
+  
   // Seek video to trim start and play
   const video = document.getElementById('trimmerVideo');
   if (!video || !video.src) {
@@ -2974,14 +2983,19 @@ function previewTrim() {
     return;
   }
   video.currentTime = trimStartSec;
-  video.play();
-  // Auto stop at trim end
-  const checkEnd = setInterval(() => {
-    if (!video.paused && video.currentTime >= trimEndSec) {
+  
+  // Use timeupdate event instead of interval for better performance
+  const onTimeUpdate = () => {
+    if (video.currentTime >= trimEndSec) {
       video.pause();
-      clearInterval(checkEnd);
+      video.removeEventListener('timeupdate', onTimeUpdate);
     }
-  }, 100);
+  };
+  
+  video.addEventListener('timeupdate', onTimeUpdate);
+  video.play().catch(() => {
+    video.removeEventListener('timeupdate', onTimeUpdate);
+  });
 }
 
 // Update playhead as video plays
@@ -3098,6 +3112,15 @@ let prefs = {
   autoDownloadLocation: 'device'
 };
 let pollInterval = null;
+let batchPollInterval = null;
+let trimCheckInterval = null;
+
+// Interval cleanup helper
+function clearAllIntervals() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  if (batchPollInterval) { clearInterval(batchPollInterval); batchPollInterval = null; }
+  if (trimCheckInterval) { clearInterval(trimCheckInterval); trimCheckInterval = null; }
+}
 let jobId = null;
 let currentDownloadUrl = '';
 let foldersLoaded = false;
@@ -3224,9 +3247,25 @@ function loadChatHistory() {
     .then(r => r.json())
     .then(data => {
       const messagesDiv = document.getElementById('chatMessages');
-      messagesDiv.innerHTML = '<div class="chat-welcome">👋 Welcome to VibeSave Chat!<br>Connect with other users in real-time.</div>';
+      // Batch DOM updates using DocumentFragment
+      const fragment = document.createDocumentFragment();
+      
+      // Add welcome message
+      const welcome = document.createElement('div');
+      welcome.className = 'chat-welcome';
+      welcome.innerHTML = '👋 Welcome to VibeSave Chat!<br>Connect with other users in real-time.';
+      fragment.appendChild(welcome);
+      
       chatMessages = data.messages || [];
-      chatMessages.forEach(msg => addChatMessageToUI(msg, true));
+      chatMessages.forEach(msg => {
+        const msgEl = createChatMessageElement(msg, true);
+        fragment.appendChild(msgEl);
+      });
+      
+      // Clear and append in one operation
+      messagesDiv.innerHTML = '';
+      messagesDiv.appendChild(fragment);
+      
       // Scroll to bottom
       const container = document.getElementById('chatContainer');
       container.scrollTop = container.scrollHeight;
@@ -3234,8 +3273,8 @@ function loadChatHistory() {
     .catch(err => console.log('Failed to load chat history:', err));
 }
 
-function addChatMessageToUI(data, skipAnimation = false) {
-  const messagesDiv = document.getElementById('chatMessages');
+// Create chat message element without appending to DOM (for batch operations)
+function createChatMessageElement(data, skipAnimation = false) {
   const isOwnMessage = data.user_id === currentUser?.id;
   
   const messageDiv = document.createElement('div');
@@ -3246,7 +3285,7 @@ function addChatMessageToUI(data, skipAnimation = false) {
   
   let avatarHtml;
   if (data.avatar_url) {
-    avatarHtml = `<img src="${serverUrl}${data.avatar_url}" alt="${data.username}" class="chat-message-avatar">`;
+    avatarHtml = `<img src="${serverUrl}${data.avatar_url}" alt="${data.username}" class="chat-message-avatar" loading="lazy">`;
   } else {
     avatarHtml = `<div class="chat-message-avatar-placeholder">${data.username?.charAt(0).toUpperCase() || '?'}</div>`;
   }
@@ -3262,6 +3301,12 @@ function addChatMessageToUI(data, skipAnimation = false) {
     </div>
   `;
   
+  return messageDiv;
+}
+
+function addChatMessageToUI(data, skipAnimation = false) {
+  const messagesDiv = document.getElementById('chatMessages');
+  const messageDiv = createChatMessageElement(data, skipAnimation);
   messagesDiv.appendChild(messageDiv);
 }
 
@@ -3568,6 +3613,9 @@ function startDownload() {
 
 function pollJob() {
   if (!jobId) return;
+  // Clear any existing interval first
+  if (pollInterval) clearInterval(pollInterval);
+  
   pollInterval = setInterval(() => {
     fetch(`${serverUrl}/status/${jobId}`)
       .then(r => r.json())
@@ -3577,15 +3625,16 @@ function pollJob() {
         }
         if (data.status === 'done') {
           clearInterval(pollInterval);
+          pollInterval = null;
           setProgress(100, '', '', 'Complete');
           log('✅ Download complete!', 'success');
           showToast('Download complete!', 'success');
           setStatus('Ready to download', false);
-          // Note: History is now tracked server-side, no need to call addHistory here
           haptic();
           setTimeout(resetDownload, 1800);
         } else if (data.status === 'error') {
           clearInterval(pollInterval);
+          pollInterval = null;
           log('❌ ' + (data.error || 'Unknown error'), 'error');
           showToast(data.error && data.error.includes('Unable') ? 'Check the URL or your connection' : 'Download failed', 'error');
           setStatus('Ready to download', false);
@@ -3593,7 +3642,7 @@ function pollJob() {
         }
       })
       .catch(() => {});
-  }, 700);
+  }, 1000); // Increased from 700ms to 1000ms to reduce server load
 }
 
 function setProgress(pct, speed, eta, stage) {
@@ -3608,7 +3657,7 @@ function resetDownload() {
   isDownloading = false;
   jobId = null;
   currentDownloadUrl = '';
-  if (pollInterval) clearInterval(pollInterval);
+  clearAllIntervals();
   setDownloadingUI(false);
   setProgress(0, '–', '–', '');
 }
@@ -3625,15 +3674,42 @@ function showProgress(show) {
   document.getElementById('progressCard').classList.toggle('visible', show);
 }
 
+// Log buffer to prevent memory buildup
+const MAX_LOG_LINES = 100;
+let logBuffer = [];
+let logDebounceTimer = null;
+
 function log(msg, type = '') {
-  const wrap = document.getElementById('logWrap');
   const now = new Date();
   const ts = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
-  const line = document.createElement('div');
-  line.className = 'log-line' + (type ? ' ' + type : '');
-  line.innerHTML = `<span class="log-time">${ts}</span><span class="log-msg">${msg}</span>`;
-  wrap.appendChild(line);
-  wrap.scrollTop = wrap.scrollHeight;
+  
+  // Add to buffer
+  logBuffer.push({ ts, msg, type });
+  
+  // Limit buffer size
+  if (logBuffer.length > MAX_LOG_LINES) {
+    logBuffer.shift();
+  }
+  
+  // Debounce DOM updates
+  clearTimeout(logDebounceTimer);
+  logDebounceTimer = setTimeout(() => {
+    const wrap = document.getElementById('logWrap');
+    if (!wrap) return;
+    
+    // Batch update
+    const fragment = document.createDocumentFragment();
+    logBuffer.forEach(({ ts, msg, type }) => {
+      const line = document.createElement('div');
+      line.className = 'log-line' + (type ? ' ' + type : '');
+      line.innerHTML = `<span class="log-time">${ts}</span><span class="log-msg">${msg}</span>`;
+      fragment.appendChild(line);
+    });
+    
+    wrap.innerHTML = '';
+    wrap.appendChild(fragment);
+    wrap.scrollTop = wrap.scrollHeight;
+  }, 50); // 50ms debounce
 }
 
 function setStatus(text, active) {
@@ -4345,12 +4421,16 @@ function startBatchDownload() {
 }
 
 function pollBatchStatus(batchId) {
-  const poll = setInterval(() => {
+  // Clear any existing batch poll
+  if (batchPollInterval) clearInterval(batchPollInterval);
+  
+  batchPollInterval = setInterval(() => {
     fetch(`${serverUrl}/batch_status/${batchId}`)
       .then(r => r.json())
       .then(data => {
         if (data.error) {
-          clearInterval(poll);
+          clearInterval(batchPollInterval);
+          batchPollInterval = null;
           return;
         }
         
@@ -4359,34 +4439,38 @@ function pollBatchStatus(batchId) {
         
         // Check if batch is complete
         if (data.completed_jobs === data.total_jobs) {
-          clearInterval(poll);
+          clearInterval(batchPollInterval);
+          batchPollInterval = null;
           showToast(`Batch complete! ${data.successful_jobs} successful, ${data.failed_jobs} failed.`, 'success');
           setStatus('Batch download complete', false);
           resetDownload();
         }
       })
       .catch(() => {
-        clearInterval(poll);
+        clearInterval(batchPollInterval);
+        batchPollInterval = null;
       });
-  }, 1000);
+  }, 1500); // Increased to 1500ms to reduce server load
 }
 
 function setBatchProgress(batchData) {
   const progressPercent = Math.round(batchData.overall_progress);
   setProgress(progressPercent, '', '', `Processing batch... ${batchData.completed_jobs}/${batchData.total_jobs} completed`);
   
-  // Update log with individual job progress
+  // Update log with individual job progress - use batch DOM updates
   const logWrap = document.getElementById('logWrap');
   if (logWrap) {
-    logWrap.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     Object.entries(batchData.jobs).forEach(([jobId, job]) => {
       const status = job.status === 'done' ? '✅' : job.status === 'error' ? '❌' : '⏳';
       const title = job.title || job.batch_url || 'Unknown';
       const logEntry = document.createElement('div');
       logEntry.className = 'log-entry';
-      logEntry.innerHTML = `${status} ${title}`;
-      logWrap.appendChild(logEntry);
+      logEntry.textContent = `${status} ${title}`; // Use textContent for security
+      fragment.appendChild(logEntry);
     });
+    logWrap.innerHTML = '';
+    logWrap.appendChild(fragment);
     logWrap.scrollTop = logWrap.scrollHeight;
   }
 }
