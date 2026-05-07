@@ -342,6 +342,306 @@
     letter-spacing: 0.8px;
   }
 
+  /* ─── Auth Modal Overlay ─── */
+  .auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease, visibility 0.5s ease;
+  }
+  .auth-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .auth-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .auth-modal {
+    position: relative;
+    width: 90%;
+    max-width: 420px;
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    border-radius: 24px;
+    padding: 40px 32px;
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.5),
+      0 0 100px rgba(124, 58, 237, 0.15);
+    transform: scale(0.95);
+    opacity: 0;
+    animation: authModalIn 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+    overflow: hidden;
+  }
+  @keyframes authModalIn {
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  .auth-modal-glow {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.15) 0%, transparent 50%);
+    animation: authGlow 8s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes authGlow {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg); }
+  }
+  .auth-modal-content {
+    position: relative;
+    z-index: 1;
+  }
+  .auth-logo {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .auth-logo-icon {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    margin: 0 auto 16px;
+    box-shadow: 0 8px 32px rgba(124, 58, 237, 0.4);
+    animation: authLogoPulse 2s ease-in-out infinite;
+  }
+  @keyframes authLogoPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(124, 58, 237, 0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 12px 40px rgba(124, 58, 237, 0.6); }
+  }
+  .auth-logo-text {
+    font-size: 24px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--text) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 2px;
+  }
+  .auth-welcome {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .auth-welcome h2 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 8px 0;
+  }
+  .auth-welcome p {
+    font-size: 14px;
+    color: var(--muted);
+    margin: 0;
+  }
+  .auth-form-container {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    animation: authFormIn 0.4s ease;
+  }
+  .auth-form-container.active {
+    display: flex;
+  }
+  @keyframes authFormIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .auth-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .auth-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .auth-optional {
+    font-weight: 400;
+    opacity: 0.6;
+  }
+  .auth-input-modern {
+    background: rgba(15, 23, 42, 0.6);
+    border: 2px solid rgba(124, 58, 237, 0.2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  .auth-input-modern:focus {
+    border-color: var(--accent);
+    background: rgba(15, 23, 42, 0.8);
+    box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1);
+  }
+  .auth-input-modern::placeholder {
+    color: var(--muted);
+  }
+  .auth-btn-modern {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 24px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .auth-btn-modern.primary {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    color: white;
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+  }
+  .auth-btn-modern.primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(124, 58, 237, 0.5);
+  }
+  .auth-btn-modern.primary:active {
+    transform: translateY(0);
+  }
+  .auth-btn-icon {
+    transition: transform 0.3s ease;
+  }
+  .auth-btn-modern:hover .auth-btn-icon {
+    transform: translateX(4px);
+  }
+  .auth-btn-modern.secondary {
+    background: transparent;
+    color: var(--muted);
+    border: 2px solid rgba(124, 58, 237, 0.3);
+  }
+  .auth-btn-modern.secondary:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: rgba(124, 58, 237, 0.1);
+  }
+  .auth-btn-modern.outline {
+    background: transparent;
+    color: var(--error);
+    border: 2px solid rgba(239, 68, 68, 0.3);
+  }
+  .auth-btn-modern.outline:hover {
+    border-color: var(--error);
+    background: rgba(239, 68, 68, 0.1);
+  }
+  .auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 8px 0;
+  }
+  .auth-divider::before,
+  .auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.3), transparent);
+  }
+  .auth-divider span {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .auth-logged-in {
+    text-align: center;
+    padding: 20px 0;
+    animation: authFormIn 0.4s ease;
+  }
+  .auth-avatar {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    margin: 0 auto 16px;
+    box-shadow: 0 8px 32px rgba(124, 58, 237, 0.4);
+  }
+  .auth-username {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+  /* User Badge (when logged in) */
+  .user-badge {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    border-radius: 99px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+  }
+  .user-badge:hover {
+    border-color: var(--accent);
+    transform: scale(1.05);
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+  }
+  .user-badge-icon {
+    font-size: 16px;
+  }
+  .user-badge-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  /* App blur when auth overlay shown */
+  body.auth-active .app {
+    filter: blur(8px) brightness(0.7);
+    pointer-events: none;
+    user-select: none;
+    transition: filter 0.5s ease;
+  }
+
   /* ─── History Page ─── */
   .history-controls {
     display: flex;
@@ -1799,6 +2099,90 @@
     <div class="status-text" id="statusText">Ready to download</div>
   </div>
 
+  <!-- Auth Modal Overlay - Blocks access until logged in -->
+  <div class="auth-overlay hidden" id="authOverlay">
+    <div class="auth-backdrop"></div>
+    <div class="auth-modal">
+      <div class="auth-modal-glow"></div>
+      <div class="auth-modal-content">
+        <!-- Logo -->
+        <div class="auth-logo">
+          <div class="auth-logo-icon">🌟</div>
+          <div class="auth-logo-text">VIBESAVE</div>
+        </div>
+        
+        <!-- Welcome Text -->
+        <div class="auth-welcome">
+          <h2 id="authWelcomeTitle">Welcome Back</h2>
+          <p id="authWelcomeSubtitle">Sign in to start downloading</p>
+        </div>
+        
+        <!-- Login Form -->
+        <div id="loginForm" class="auth-form-container active">
+          <div class="auth-input-group">
+            <label class="auth-label">Username</label>
+            <input type="text" id="loginUsername" class="auth-input-modern" placeholder="Enter your username" autocomplete="username">
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Password</label>
+            <input type="password" id="loginPassword" class="auth-input-modern" placeholder="Enter your password" autocomplete="current-password">
+          </div>
+          <button class="auth-btn-modern primary" onclick="login()">
+            <span class="auth-btn-text">Sign In</span>
+            <span class="auth-btn-icon">→</span>
+          </button>
+          <div class="auth-divider">
+            <span>or</span>
+          </div>
+          <button class="auth-btn-modern secondary" onclick="showRegister()">
+            Create New Account
+          </button>
+        </div>
+        
+        <!-- Register Form -->
+        <div id="registerForm" class="auth-form-container">
+          <div class="auth-input-group">
+            <label class="auth-label">Username</label>
+            <input type="text" id="regUsername" class="auth-input-modern" placeholder="Choose a username" autocomplete="username">
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Email <span class="auth-optional">(optional)</span></label>
+            <input type="email" id="regEmail" class="auth-input-modern" placeholder="your@email.com">
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-label">Password</label>
+            <input type="password" id="regPassword" class="auth-input-modern" placeholder="Min 6 characters" autocomplete="new-password">
+          </div>
+          <button class="auth-btn-modern primary" onclick="register()">
+            <span class="auth-btn-text">Create Account</span>
+            <span class="auth-btn-icon">→</span>
+          </button>
+          <div class="auth-divider">
+            <span>or</span>
+          </div>
+          <button class="auth-btn-modern secondary" onclick="showLogin()">
+            Already have an account?
+          </button>
+        </div>
+        
+        <!-- Logged In State -->
+        <div id="authLoggedIn" class="auth-logged-in" style="display:none;">
+          <div class="auth-avatar">👤</div>
+          <div class="auth-username" id="authDisplayUsername"></div>
+          <button class="auth-btn-modern outline" onclick="logout()">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Mini user badge (shown when logged in) -->
+  <div class="user-badge" id="userBadge" style="display:none;" onclick="showAuthModal()">
+    <span class="user-badge-icon">👤</span>
+    <span class="user-badge-name" id="userBadgeName"></span>
+  </div>
+
   <!-- Navigation Tabs -->
   <div class="nav-tabs">
     <button class="nav-tab active" id="tabDownload" onclick="switchTab('download')">
@@ -2706,8 +3090,219 @@ function detectPlatform() {
   return 'android';
 }
 
+// ─── Authentication State ───
+let authToken = localStorage.getItem('vibesave_token') || '';
+let currentUser = null;
+let isAuthModalOpen = false;
+
+// Generate unique device ID for remembering device
+function getDeviceId() {
+  let deviceId = localStorage.getItem('vibesave_device_id');
+  if (!deviceId) {
+    deviceId = 'dev_' + Math.random().toString(36).substr(2, 16);
+    localStorage.setItem('vibesave_device_id', deviceId);
+  }
+  return deviceId;
+}
+
+// Show/hide auth modal
+function showAuthModal() {
+  isAuthModalOpen = true;
+  document.getElementById('authOverlay').classList.remove('hidden');
+  document.body.classList.add('auth-active');
+  updateAuthUI();
+}
+
+function hideAuthModal() {
+  isAuthModalOpen = false;
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.body.classList.remove('auth-active');
+}
+
+// Show login form
+function showLogin() {
+  document.getElementById('loginForm').classList.add('active');
+  document.getElementById('registerForm').classList.remove('active');
+  document.getElementById('authLoggedIn').style.display = 'none';
+  document.getElementById('authWelcomeTitle').textContent = 'Welcome Back';
+  document.getElementById('authWelcomeSubtitle').textContent = 'Sign in to start downloading';
+}
+
+// Show register form
+function showRegister() {
+  document.getElementById('loginForm').classList.remove('active');
+  document.getElementById('registerForm').classList.add('active');
+  document.getElementById('authLoggedIn').style.display = 'none';
+  document.getElementById('authWelcomeTitle').textContent = 'Create Account';
+  document.getElementById('authWelcomeSubtitle').textContent = 'Join VibeSave to download videos';
+}
+
+// Show logged in state
+function showLoggedIn() {
+  document.getElementById('loginForm').classList.remove('active');
+  document.getElementById('registerForm').classList.remove('active');
+  document.getElementById('authLoggedIn').style.display = 'block';
+  document.getElementById('authWelcomeTitle').textContent = 'Welcome Back!';
+  document.getElementById('authWelcomeSubtitle').textContent = 'You are signed in';
+  document.getElementById('authDisplayUsername').textContent = currentUser?.username || '';
+}
+
+// Register new user
+async function register() {
+  const username = document.getElementById('regUsername').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const deviceId = getDeviceId();
+  
+  if (!username || !password) {
+    showToast('Username and password are required', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  
+  const btn = document.querySelector('#registerForm .auth-btn-modern.primary');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="auth-btn-text">Creating...</span>';
+  
+  try {
+    const resp = await fetch(`${serverUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password, device_id: deviceId })
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      authToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('vibesave_token', authToken);
+      localStorage.setItem('vibesave_user', JSON.stringify(currentUser));
+      updateAuthUI();
+      showToast('Account created successfully!', 'success');
+      setTimeout(hideAuthModal, 1000);
+    } else {
+      showToast(data.error || 'Registration failed', 'error');
+    }
+  } catch (err) {
+    showToast('Could not connect to server', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="auth-btn-text">Create Account</span><span class="auth-btn-icon">→</span>';
+  }
+}
+
+// Login user
+async function login() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const deviceId = getDeviceId();
+  
+  if (!username || !password) {
+    showToast('Username and password are required', 'error');
+    return;
+  }
+  
+  const btn = document.querySelector('#loginForm .auth-btn-modern.primary');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="auth-btn-text">Signing in...</span>';
+  
+  try {
+    const resp = await fetch(`${serverUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, device_id: deviceId })
+    });
+    
+    const data = await resp.json();
+    
+    if (data.success) {
+      authToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('vibesave_token', authToken);
+      localStorage.setItem('vibesave_user', JSON.stringify(currentUser));
+      updateAuthUI();
+      showToast('Welcome back, ' + currentUser.username + '!', 'success');
+      setTimeout(hideAuthModal, 1000);
+    } else {
+      showToast(data.error || 'Login failed', 'error');
+    }
+  } catch (err) {
+    showToast('Could not connect to server', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="auth-btn-text">Sign In</span><span class="auth-btn-icon">→</span>';
+  }
+}
+
+// Logout user
+function logout() {
+  authToken = '';
+  currentUser = null;
+  localStorage.removeItem('vibesave_token');
+  localStorage.removeItem('vibesave_user');
+  updateAuthUI();
+  showAuthModal();
+  showToast('Logged out successfully', 'success');
+}
+
+// Update auth UI based on login state
+function updateAuthUI() {
+  if (authToken && currentUser) {
+    // User is logged in
+    document.getElementById('userBadge').style.display = 'flex';
+    document.getElementById('userBadgeName').textContent = currentUser.username;
+    if (isAuthModalOpen) {
+      showLoggedIn();
+    }
+  } else {
+    // User is not logged in
+    document.getElementById('userBadge').style.display = 'none';
+    showLogin();
+  }
+}
+
+// Check if user is authenticated and restore session
+async function checkAuth() {
+  const savedUser = localStorage.getItem('vibesave_user');
+  if (savedUser) {
+    currentUser = JSON.parse(savedUser);
+  }
+  
+  if (authToken) {
+    // Verify token is still valid
+    try {
+      const resp = await fetch(`${serverUrl}/auth/profile`, {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      });
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        currentUser = data;
+        localStorage.setItem('vibesave_user', JSON.stringify(currentUser));
+        updateAuthUI();
+      } else {
+        // Token expired or invalid - show auth modal
+        showAuthModal();
+      }
+    } catch (err) {
+      console.log('Auth check failed:', err);
+      showAuthModal();
+    }
+  } else {
+    // No token - show auth modal
+    showAuthModal();
+  }
+}
+
 // ─── Init ───
 function init() {
+  // Check authentication first
+  checkAuth();
+  
   // Load saved folder preference
   const savedFolder = localStorage.getItem('vibesave_folder');
   if (savedFolder) currentFolder = savedFolder;
@@ -3281,8 +3876,20 @@ function loadHistory(reset = true) {
     status: currentStatusFilter !== 'all' ? currentStatusFilter : ''
   });
   
-  fetch(`${serverUrl}/history?${params}`)
-    .then(r => r.json())
+  const headers = {};
+  if (authToken) {
+    headers['Authorization'] = 'Bearer ' + authToken;
+  }
+  
+  fetch(`${serverUrl}/history?${params}`, { headers })
+    .then(r => {
+      if (r.status === 401) {
+        // Token expired, logout
+        logout();
+        throw new Error('Session expired');
+      }
+      return r.json();
+    })
     .then(data => {
       if (data.history && data.history.length > 0) {
         renderHistory(data.history, reset);
@@ -3368,10 +3975,22 @@ function redownload(jobId) {
   
   showToast('Starting redownload...', 'info');
   
+  const headers = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers['Authorization'] = 'Bearer ' + authToken;
+  }
+  
   fetch(`${serverUrl}/redownload/${jobId}`, {
-    method: 'POST'
+    method: 'POST',
+    headers
   })
-  .then(r => r.json())
+  .then(r => {
+    if (r.status === 401) {
+      logout();
+      throw new Error('Session expired');
+    }
+    return r.json();
+  })
   .then(data => {
     if (data.job_id) {
       showToast('Redownload started!', 'success');
@@ -3398,8 +4017,19 @@ function loadStats() {
     return;
   }
   
-  fetch(`${serverUrl}/stats`)
-    .then(r => r.json())
+  const headers = {};
+  if (authToken) {
+    headers['Authorization'] = 'Bearer ' + authToken;
+  }
+  
+  fetch(`${serverUrl}/stats`, { headers })
+    .then(r => {
+      if (r.status === 401) {
+        logout();
+        throw new Error('Session expired');
+      }
+      return r.json();
+    })
     .then(data => {
       // Update stat cards
       document.getElementById('totalDownloads').textContent = data.total || 0;

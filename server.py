@@ -83,15 +83,6 @@ def ensure_ffmpeg():
     print("  Windows: download from https://ffmpeg.org/ or use your package manager")
     return False
 
-# Ensure Python packages required by this server
-_python_requirements = {
-    "flask": "flask",
-    "flask-cors": "flask_cors",
-    "yt-dlp": "yt_dlp",
-}
-ensure_python_packages(_python_requirements)
-
-# Try to ensure ffmpeg exists (best-effort; may require sudo)
 ensure_ffmpeg()
 
 # ─── End bootstrap; import rest of modules ────────────────────────────────────
@@ -99,6 +90,9 @@ ensure_ffmpeg()
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
+from werkzeug.security import generate_password_hash, check_password_hash
+import jwt
+from datetime import datetime, timedelta
 import threading
 import uuid
 import tempfile
@@ -115,6 +109,49 @@ from datetime import datetime
 app = Flask(__name__)
 # Expose Content-Disposition and Content-Length so the client can read filename and size
 CORS(app, expose_headers=["Content-Disposition", "Content-Length"])
+
+# ─── Authentication Configuration ─────────────────────────────────────────
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'vibesave-dev-secret-key-change-in-production')
+JWT_EXPIRATION_HOURS = 168  # 7 days
+
+def generate_jwt_token(user_id, username):
+    """Generate JWT token for user"""
+    payload = {
+        'user_id': user_id,
+        'username': username,
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm='HS256')
+
+def verify_jwt_token(token):
+    """Verify JWT token and return user info"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def get_user_from_token():
+    """Get user info from request Authorization header"""
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        return verify_jwt_token(token)
+    return None
+
+def require_auth(f):
+    """Decorator to require authentication for endpoint"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_user_from_token()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(user, *args, **kwargs)
+    return decorated
 
 # ─── Folder detection ───────────────────────────────────────────────────────
 
@@ -181,6 +218,26 @@ def init_database():
         )
     ''')
     
+    # Create users table for authentication
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP,
+            device_id TEXT,
+            is_active BOOLEAN DEFAULT 1
+        )
+    ''')
+    
+    # Add user_id column to download_history if not exists
+    cursor.execute("PRAGMA table_info(download_history)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'user_id' not in columns:
+        cursor.execute('ALTER TABLE download_history ADD COLUMN user_id INTEGER REFERENCES users(id)')
+    
     conn.commit()
     conn.close()
     return db_path
@@ -189,7 +246,7 @@ DB_PATH = init_database()
 
 def add_download_record(job_id, url, title="", author="", thumbnail="", duration=None, 
                        platform="", format="", mp3=False, file_path="", file_name="", 
-                       file_size=None, status="queued", error_message=""):
+                       file_size=None, status="queued", error_message="", user_id=None):
     """Add or update a download record in the database"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -197,12 +254,12 @@ def add_download_record(job_id, url, title="", author="", thumbnail="", duration
     cursor.execute('''
         INSERT OR REPLACE INTO download_history 
         (job_id, url, title, author, thumbnail, duration, platform, format, mp3, 
-         file_path, file_name, file_size, status, error_message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
+         file_path, file_name, file_size, status, error_message, user_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(
             (SELECT created_at FROM download_history WHERE job_id = ?), CURRENT_TIMESTAMP
         ))
     ''', (job_id, url, title, author, thumbnail, duration, platform, format, mp3,
-          file_path, file_name, file_size, status, error_message, job_id))
+          file_path, file_name, file_size, status, error_message, user_id, job_id))
     
     conn.commit()
     conn.close()
@@ -243,7 +300,7 @@ def update_download_status(job_id, status, file_path=None, file_name=None,
     conn.commit()
     conn.close()
 
-def get_download_history(limit=50, offset=0, search=None, status_filter=None):
+def get_download_history(limit=50, offset=0, search=None, status_filter=None, user_id=None):
     """Get download history with optional search and filtering"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -255,18 +312,24 @@ def get_download_history(limit=50, offset=0, search=None, status_filter=None):
         FROM download_history
     '''
     params = []
+    conditions = []
+    
+    # Filter by user if user_id provided
+    if user_id:
+        conditions.append("user_id = ?")
+        params.append(user_id)
     
     if search:
-        query += " WHERE (title LIKE ? OR author LIKE ? OR url LIKE ?)"
+        conditions.append("(title LIKE ? OR author LIKE ? OR url LIKE ?)")
         search_term = f"%{search}%"
         params.extend([search_term, search_term, search_term])
     
     if status_filter:
-        if search:
-            query += " AND status = ?"
-        else:
-            query += " WHERE status = ?"
+        conditions.append("status = ?")
         params.append(status_filter)
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
     
     query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -278,18 +341,21 @@ def get_download_history(limit=50, offset=0, search=None, status_filter=None):
     conn.close()
     return results
 
-def get_download_stats():
+def get_download_stats(user_id=None):
     """Get download statistics"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM download_history")
+    where_clause = "WHERE user_id = ?" if user_id else ""
+    params = [user_id] if user_id else []
+    
+    cursor.execute(f"SELECT COUNT(*) FROM download_history {where_clause}", params)
     total_downloads = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM download_history WHERE status = 'done'")
+    cursor.execute(f"SELECT COUNT(*) FROM download_history WHERE status = 'done' {('AND user_id = ?' if user_id else '')}", params)
     successful_downloads = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM download_history WHERE status = 'error'")
+    cursor.execute(f"SELECT COUNT(*) FROM download_history WHERE status = 'error' {('AND user_id = ?' if user_id else '')}", params)
     failed_downloads = cursor.fetchone()[0]
     
     cursor.execute('''
@@ -528,12 +594,13 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
 
 # ─── Download worker (cookies.txt support + improved anti-bot headers) ──────
 
-def run_download(job_id, url, fmt, mp3, folder, platform='android'):
+def run_download(job_id, url, fmt, mp3, folder, platform='android', user_id=None):
     """
     Background worker for /download (server-side save). Supports:
       - fmt: yt-dlp format string OR the special value 'png' (images/thumbnails)
       - mp3: boolean (if True performs mp3 postprocessing)
       - platform: 'android' (default) or 'ios' — affects merge_output_format (mp4 vs mov)
+      - user_id: optional user ID to associate download with authenticated user
     """
     job = jobs[job_id]
     job["status"] = "downloading"
@@ -601,7 +668,7 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
             # Add initial record to database
             add_download_record(
                 job_id, url, title, author, thumbnail, duration,
-                platform_name, fmt, mp3, status="downloading"
+                platform_name, fmt, mp3, status="downloading", user_id=user_id
             )
             
             # Update job with extracted info
@@ -609,7 +676,7 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
     except Exception as e:
         print(f"Failed to extract initial info: {e}")
         # Add record with minimal info
-        add_download_record(job_id, url, format=fmt, mp3=mp3, status="downloading")
+        add_download_record(job_id, url, format=fmt, mp3=mp3, status="downloading", user_id=user_id)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -784,6 +851,127 @@ def cleanup_later(path, delay=60):
         except Exception:
             pass
     threading.Thread(target=_cleanup, daemon=True).start()
+
+# ─── Authentication Endpoints ─────────────────────────────────────────────
+
+@app.route("/auth/register", methods=["POST"])
+def register():
+    """Register a new user"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '')
+    device_id = data.get('device_id', '')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    password_hash = generate_password_hash(password)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO users (username, email, password_hash, device_id)
+            VALUES (?, ?, ?, ?)
+        ''', (username, email, password_hash, device_id))
+        conn.commit()
+        user_id = cursor.lastrowid
+        
+        token = generate_jwt_token(user_id, username)
+        
+        return jsonify({
+            'success': True,
+            'token': token,
+            'user': {
+                'id': user_id,
+                'username': username,
+                'email': email
+            }
+        })
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Username or email already exists'}), 409
+    finally:
+        conn.close()
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    """Login user and return JWT token"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    device_id = data.get('device_id', '')
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, username, email, password_hash, device_id FROM users WHERE username = ? AND is_active = 1', (username,))
+    user = cursor.fetchone()
+    
+    if not user or not check_password_hash(user[3], password):
+        conn.close()
+        return jsonify({'error': 'Invalid username or password'}), 401
+    
+    # Update last login and device_id
+    cursor.execute('UPDATE users SET last_login = CURRENT_TIMESTAMP, device_id = ? WHERE id = ?', 
+                   (device_id, user[0]))
+    conn.commit()
+    conn.close()
+    
+    token = generate_jwt_token(user[0], user[1])
+    
+    return jsonify({
+        'success': True,
+        'token': token,
+        'user': {
+            'id': user[0],
+            'username': user[1],
+            'email': user[2],
+            'device_id': device_id or user[4]
+        }
+    })
+
+@app.route("/auth/profile", methods=["GET"])
+@require_auth
+def get_profile(user):
+    """Get current user profile"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, username, email, created_at, device_id FROM users WHERE id = ?', 
+                   (user['user_id'],))
+    user_data = cursor.fetchone()
+    conn.close()
+    
+    if not user_data:
+        return jsonify({'error': 'User not found'}), 404
+    
+    return jsonify({
+        'id': user_data[0],
+        'username': user_data[1],
+        'email': user_data[2],
+        'created_at': user_data[3],
+        'device_id': user_data[4]
+    })
+
+@app.route("/auth/device", methods=["POST"])
+@require_auth
+def update_device(user):
+    """Update device ID for remembering device"""
+    data = request.get_json()
+    device_id = data.get('device_id', '')
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET device_id = ? WHERE id = ?', (device_id, user['user_id']))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Device remembered'})
 
 # ─── Endpoint: download and return file directly to client ──────────────────
 
@@ -997,9 +1185,13 @@ def set_folder():
 def start_download():
     data = request.get_json()
     
+    # Get user from token if authenticated
+    user = get_user_from_token()
+    user_id = user.get('user_id') if user else None
+    
     # Check if this is a batch download
     if "urls" in data:
-        return start_batch_download(data)
+        return start_batch_download(data, user_id)
     
     # Single download (existing logic)
     url = data.get("url", "").strip()
@@ -1024,12 +1216,12 @@ def start_download():
         "filename": "",
     }
 
-    t = threading.Thread(target=run_download, args=(job_id, url, fmt, mp3, current_folder, platform), daemon=True)
+    t = threading.Thread(target=run_download, args=(job_id, url, fmt, mp3, current_folder, platform, user_id), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id, "folder": current_folder})
 
-def start_batch_download(data):
+def start_batch_download(data, user_id=None):
     """Handle batch download of multiple URLs"""
     urls = data.get("urls", [])
     fmt = data.get("format", "bestvideo+bestaudio/best")
@@ -1073,7 +1265,7 @@ def start_batch_download(data):
         }
         
         # Start download with a small delay to avoid overwhelming the server
-        t = threading.Thread(target=run_download, args=(job_id, url, fmt, mp3, current_folder, platform), daemon=True)
+        t = threading.Thread(target=run_download, args=(job_id, url, fmt, mp3, current_folder, platform, user_id), daemon=True)
         t.start()
         time.sleep(0.1)  # Small delay between downloads
     
@@ -1120,7 +1312,8 @@ def get_status(job_id):
 # ─── Download History Endpoints ───────────────────────────────────────────────
 
 @app.route("/history", methods=["GET"])
-def get_history():
+@require_auth
+def get_history(user):
     """Get download history with pagination and filtering"""
     limit = min(int(request.args.get("limit", 50)), 100)  # Cap at 100
     offset = int(request.args.get("offset", 0))
@@ -1128,7 +1321,7 @@ def get_history():
     status_filter = request.args.get("status", "").strip()
     
     history = get_download_history(limit, offset, search if search else None, 
-                                 status_filter if status_filter else None)
+                                 status_filter if status_filter else None, user_id=user['user_id'])
     
     return jsonify({
         "history": history,
@@ -1138,20 +1331,22 @@ def get_history():
     })
 
 @app.route("/stats", methods=["GET"])
-def get_stats():
+@require_auth
+def get_stats(user):
     """Get download statistics"""
-    return jsonify(get_download_stats())
+    return jsonify(get_download_stats(user_id=user['user_id']))
 
 @app.route("/redownload/<job_id>", methods=["POST"])
-def redownload(job_id):
+@require_auth
+def redownload(user, job_id):
     """Re-download a previously completed item"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     cursor.execute('''
         SELECT url, format, mp3 FROM download_history 
-        WHERE job_id = ? AND status = 'done'
-    ''', (job_id,))
+        WHERE job_id = ? AND status = 'done' AND user_id = ?
+    ''', (job_id, user['user_id']))
     
     result = cursor.fetchone()
     conn.close()
