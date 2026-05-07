@@ -89,6 +89,7 @@ ensure_ffmpeg()
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import yt_dlp
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -109,6 +110,9 @@ from datetime import datetime
 app = Flask(__name__)
 # Expose Content-Disposition and Content-Length so the client can read filename and size
 CORS(app, expose_headers=["Content-Disposition", "Content-Length"])
+
+# Initialize SocketIO for real-time chat
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ─── Authentication Configuration ─────────────────────────────────────────
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'vibesave-dev-secret-key-change-in-production')
@@ -228,7 +232,8 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP,
             device_id TEXT,
-            is_active BOOLEAN DEFAULT 1
+            is_active BOOLEAN DEFAULT 1,
+            avatar_url TEXT
         )
     ''')
     
@@ -237,6 +242,24 @@ def init_database():
     columns = [col[1] for col in cursor.fetchall()]
     if 'user_id' not in columns:
         cursor.execute('ALTER TABLE download_history ADD COLUMN user_id INTEGER REFERENCES users(id)')
+    
+    # Add avatar_url column to users if not exists
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'avatar_url' not in columns:
+        cursor.execute('ALTER TABLE users ADD COLUMN avatar_url TEXT')
+    
+    # Create chat_messages table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            username TEXT NOT NULL,
+            avatar_url TEXT,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
     conn.commit()
     conn.close()
@@ -377,6 +400,70 @@ def get_download_stats(user_id=None):
         "success_rate": (successful_downloads / total_downloads * 100) if total_downloads > 0 else 0,
         "top_platforms": [{"platform": p, "count": c} for p, c in top_platforms]
     }
+
+# ─── Chat Functions ───────────────────────────────────────────────────────────
+
+def add_chat_message(user_id, username, avatar_url, message):
+    """Add a chat message to the database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO chat_messages (user_id, username, avatar_url, message)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, username, avatar_url, message))
+    
+    message_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return {
+        'id': message_id,
+        'user_id': user_id,
+        'username': username,
+        'avatar_url': avatar_url,
+        'message': message,
+        'created_at': datetime.utcnow().isoformat()
+    }
+
+def get_chat_history(limit=100):
+    """Get recent chat messages"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, user_id, username, avatar_url, message, created_at
+        FROM chat_messages
+        ORDER BY created_at DESC
+        LIMIT ?
+    ''', (limit,))
+    
+    columns = [description[0] for description in cursor.description]
+    results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    
+    conn.close()
+    return list(reversed(results))  # Oldest first
+
+def update_user_avatar(user_id, avatar_url):
+    """Update user's avatar URL"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('UPDATE users SET avatar_url = ? WHERE id = ?', (avatar_url, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_user_avatar(user_id):
+    """Get user's avatar URL"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT avatar_url FROM users WHERE id = ?', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    return result[0] if result else None
 
 # ─── FFmpeg ───────────────────────────────────────────────────────────────────
 
@@ -890,7 +977,8 @@ def register():
             'user': {
                 'id': user_id,
                 'username': username,
-                'email': email
+                'email': email,
+                'avatar_url': None
             }
         })
     except sqlite3.IntegrityError:
@@ -909,7 +997,7 @@ def login():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id, username, email, password_hash, device_id FROM users WHERE username = ? AND is_active = 1', (username,))
+    cursor.execute('SELECT id, username, email, password_hash, device_id, avatar_url FROM users WHERE username = ? AND is_active = 1', (username,))
     user = cursor.fetchone()
     
     if not user or not check_password_hash(user[3], password):
@@ -931,7 +1019,8 @@ def login():
             'id': user[0],
             'username': user[1],
             'email': user[2],
-            'device_id': device_id or user[4]
+            'device_id': device_id or user[4],
+            'avatar_url': user[5]
         }
     })
 
@@ -942,7 +1031,7 @@ def get_profile(user):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id, username, email, created_at, device_id FROM users WHERE id = ?', 
+    cursor.execute('SELECT id, username, email, created_at, device_id, avatar_url FROM users WHERE id = ?', 
                    (user['user_id'],))
     user_data = cursor.fetchone()
     conn.close()
@@ -955,7 +1044,8 @@ def get_profile(user):
         'username': user_data[1],
         'email': user_data[2],
         'created_at': user_data[3],
-        'device_id': user_data[4]
+        'device_id': user_data[4],
+        'avatar_url': user_data[5]
     })
 
 @app.route("/auth/device", methods=["POST"])
@@ -972,6 +1062,114 @@ def update_device(user):
     conn.close()
     
     return jsonify({'success': True, 'message': 'Device remembered'})
+
+@app.route("/auth/avatar", methods=["POST"])
+@require_auth
+def upload_avatar(user):
+    """Upload user avatar image"""
+    if 'avatar' not in request.files:
+        return jsonify({'error': 'No avatar file provided'}), 400
+    
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp'}), 400
+    
+    # Create avatars directory
+    avatars_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'avatars')
+    os.makedirs(avatars_dir, exist_ok=True)
+    
+    # Generate unique filename
+    filename = f"user_{user['user_id']}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = os.path.join(avatars_dir, filename)
+    
+    # Save file
+    file.save(filepath)
+    
+    # Update database
+    avatar_url = f"/avatars/{filename}"
+    update_user_avatar(user['user_id'], avatar_url)
+    
+    return jsonify({
+        'success': True,
+        'avatar_url': avatar_url,
+        'message': 'Avatar uploaded successfully'
+    })
+
+@app.route("/avatars/<filename>", methods=["GET"])
+def serve_avatar(filename):
+    """Serve avatar images"""
+    avatars_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'avatars')
+    return send_file(os.path.join(avatars_dir, filename))
+
+@app.route("/chat/history", methods=["GET"])
+def get_chat_history_endpoint():
+    """Get chat history"""
+    limit = request.args.get('limit', 100, type=int)
+    messages = get_chat_history(limit)
+    return jsonify({'messages': messages})
+
+# ─── WebSocket Chat Events ──────────────────────────────────────────────────
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    join_room('global')
+    emit('connected', {'message': 'Connected to chat'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    leave_room('global')
+
+@socketio.on('send_message')
+def handle_send_message(data):
+    """Handle incoming chat message"""
+    # Verify user from token
+    token = data.get('token', '')
+    if not token:
+        emit('error', {'message': 'Authentication required'})
+        return
+    
+    user = verify_jwt_token(token)
+    if not user:
+        emit('error', {'message': 'Invalid token'})
+        return
+    
+    message = data.get('message', '').strip()
+    if not message:
+        emit('error', {'message': 'Message cannot be empty'})
+        return
+    
+    if len(message) > 500:
+        emit('error', {'message': 'Message too long (max 500 characters)'})
+        return
+    
+    # Get user's avatar
+    avatar_url = get_user_avatar(user['user_id'])
+    
+    # Save message to database
+    msg_data = add_chat_message(
+        user_id=user['user_id'],
+        username=user['username'],
+        avatar_url=avatar_url,
+        message=message
+    )
+    
+    # Broadcast to all clients in global room
+    emit('new_message', {
+        'id': msg_data['id'],
+        'user_id': msg_data['user_id'],
+        'username': msg_data['username'],
+        'avatar_url': msg_data['avatar_url'],
+        'message': msg_data['message'],
+        'created_at': msg_data['created_at']
+    }, broadcast=True, room='global')
 
 # ─── Endpoint: download and return file directly to client ──────────────────
 
@@ -1632,4 +1830,4 @@ if __name__ == "__main__":
 """)
     # Use PORT env var for Render.com, default to 5000 for local
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
