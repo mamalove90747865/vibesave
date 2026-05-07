@@ -2032,16 +2032,12 @@
 
     <div class="dl-btn-wrap" id="btnArea">
       <div class="dl-btn-row">
-        <button class="dl-btn" id="dlBtn" onclick="startDownload()">
-          <span class="dl-btn-icon">🚀</span>
-          <span class="dl-btn-text">START DOWNLOAD</span>
-        </button>
-        <button class="dl-btn secondary" id="dlDeviceBtn" onclick="downloadToDevice()">
+        <button class="dl-btn" id="dlDeviceBtn" onclick="downloadToDevice()">
           <span class="dl-btn-icon">⬇️</span>
           <span class="dl-btn-text">DOWNLOAD TO DEVICE</span>
         </button>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px;">Use "START DOWNLOAD" to save on the server. Use "DOWNLOAD TO DEVICE" to download directly to your phone/PC without leaving the page.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;">Downloads directly to your device. No files stored on server.</div>
     </div>
 
   </div>
@@ -2147,8 +2143,7 @@
         <div class="settings-row-sub">Where to save auto-downloaded files</div>
       </div>
       <select class="settings-select" id="autoDownloadLocation" onchange="updateAutoDownloadLocation()">
-        <option value="server">Server</option>
-        <option value="device">Device</option>
+        <option value="device" selected>Device</option>
       </select>
     </div>
 
@@ -2167,14 +2162,6 @@
       </div>
       <div class="toggle on" id="togHaptic" onclick="togglePref('haptic',this)"></div>
     </div>
-    <div class="settings-row">
-      <div class="settings-row-left">
-        <div class="settings-row-title">Save server URL</div>
-        <div class="settings-row-sub">Remember last used server</div>
-      </div>
-      <div class="toggle on" id="togSaveServer" onclick="togglePref('saveServer',this)"></div>
-    </div>
-
     <div class="settings-section-title" style="margin-top:16px;">Community</div>
     <div class="community-grid">
       <div class="community-btn" onclick="window.open('https://discord.gg/prJfh8KtEy','_blank')">
@@ -2684,31 +2671,43 @@ let serverUrl = '';
 let prefs = { 
   autoPaste: true, 
   haptic: true, 
-  saveServer: true,
+  saveServer: false,
   autoDownload: false,
   autoDownloadType: 'video',
   autoDownloadQuality: 'auto',
-  autoDownloadLocation: 'server'
+  autoDownloadLocation: 'device'
 };
 let pollInterval = null;
 let jobId = null;
 let currentDownloadUrl = '';
 let foldersLoaded = false;
-// New: platform state (android | ios). Default android for backward compatibility.
-let selectedPlatform = 'android';
+// Auto-detect platform from user agent (iOS vs Android)
+let selectedPlatform = detectPlatform();
+
+// ─── Platform detection ───
+function detectPlatform() {
+  const userAgent = navigator.userAgent.toLowerCase();
+  // Detect iOS devices (iPhone, iPad, iPod)
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    return 'ios';
+  }
+  // Default to android for everything else (Android, Windows, Mac, Linux)
+  return 'android';
+}
 
 // ─── Init ───
 function init() {
-  const saved = localStorage.getItem('vibesave_prefs');
-  if (saved) prefs = {...prefs, ...JSON.parse(saved)};
-  const savedServer = localStorage.getItem('vibesave_server');
-  if (savedServer) { serverUrl = savedServer; document.getElementById('serverInput').value = savedServer; }
-  // Restore saved platform selection if present
+  // Load saved folder preference
+  const savedFolder = localStorage.getItem('vibesave_folder');
+  if (savedFolder) currentFolder = savedFolder;
+  // Platform is auto-detected, but allow override via localStorage
   const savedPlat = localStorage.getItem('vibesave_platform');
   if (savedPlat) {
     selectedPlatform = savedPlat;
-    updatePlatformUI();
+  } else {
+    selectedPlatform = detectPlatform();
   }
+  updatePlatformUI();
   updatePrefsUI();
   if (prefs.autoPaste) tryAutoPaste();
   if (serverUrl) { setTimeout(() => loadFolders(), 700); }
@@ -3035,6 +3034,12 @@ function fetchFileForJob(jobId, lastStatus, presetConfig) {
             setStatus('Ready to download', false);
             // Note: History is now tracked server-side, no need to call addHistory here
             resetDownload();
+            
+            // Delete file from server to free up space
+            fetch(`${serverUrl}/delete_job/${jobId}`, { method: 'POST' })
+              .then(() => console.log('Server file deleted'))
+              .catch(err => console.log('Failed to delete server file:', err));
+            
             return;
           }
           chunks.push(value);
@@ -3072,7 +3077,6 @@ function updatePrefsUI() {
     const map = { 
       autoPaste: 'togAutoPaste', 
       haptic: 'togHaptic', 
-      saveServer: 'togSaveServer',
       autoDownload: 'togAutoDownload'
     };
     if (map[k]) document.getElementById(map[k]).classList.toggle('on', v);
@@ -3081,7 +3085,7 @@ function updatePrefsUI() {
   // Update select elements
   document.getElementById('autoDownloadType').value = prefs.autoDownloadType || 'video';
   document.getElementById('autoDownloadQuality').value = prefs.autoDownloadQuality || 'auto';
-  document.getElementById('autoDownloadLocation').value = prefs.autoDownloadLocation || 'server';
+  document.getElementById('autoDownloadLocation').value = prefs.autoDownloadLocation || 'device';
 }
 
 function updateAutoDownloadType() {
@@ -3118,12 +3122,8 @@ function tryAutoDownload() {
   const qualityPreset = prefs.autoDownloadQuality || 'auto';
   selectPreset(qualityPreset);
   
-  // Start download based on location preference
-  if (prefs.autoDownloadLocation === 'device') {
-    downloadToDevice();
-  } else {
-    startDownload();
-  }
+  // Always download to device (server download removed)
+  downloadToDevice();
   
   showToast('Auto-download started!', 'success');
 }

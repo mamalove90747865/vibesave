@@ -430,12 +430,9 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
         headers["Referer"] = referer
 
     # Use a robust format string that always has fallbacks
-    # "bestvideo+bestaudio/best/bestvideo/bestaudio" covers:
-    #   1. Best separate video+audio (merged by ffmpeg)
-    #   2. Best single combined stream
-    #   3. Best video-only (if no combined)
-    #   4. Best audio-only (last resort)
-    safe_fmt = fmt or "bestvideo+bestaudio/best/bestvideo/bestaudio"
+    # Prefer best quality: bestvideo*+bestaudio/bestvideo+bestaudio/best/bestvideo/bestaudio
+    # This prioritizes highest resolution available (up to 4K/8K if available)
+    safe_fmt = fmt or "bestvideo[height<=2160]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/bestvideo/bestaudio"
 
     # Build player_client list based on available JS runtime.
     # With Deno/Node: use "web" first — it gets the best formats and Deno solves the n-challenge.
@@ -454,7 +451,8 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
         "http_chunk_size": 1048576,
         "retries": 20,
         "fragment_retries": 20,
-        "format_sort": ["res", "fps", "vcodec:h264", "acodec:aac"],
+        # Sort by resolution (prefer higher), then fps, then prefer h264 for compatibility
+        "format_sort": ["res:1080", "res", "fps", "vcodec:h264", "acodec:aac"],
         "extractor_args": {
             "youtube": {
                 "player_client": player_clients,
@@ -492,13 +490,13 @@ def make_base_ydl_opts(url, fmt, mp3, want_images=False):
 
     # mp3 postprocessing (use ffmpeg)
     if mp3:
-        # Use bestvideo+bestaudio/best so we get audio even when it's only muxed with video
+        # Use bestaudio for best quality audio extraction
         opts.update({
-            "format": "bestvideo+bestaudio/best",
+            "format": "bestaudio/best",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "192",
+                "preferredquality": "320",  # Highest MP3 quality
             }],
             "prefer_ffmpeg": True,
         })
@@ -564,7 +562,8 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
     try:
         with yt_dlp.YoutubeDL({
             "quiet": True, "skip_download": True,
-            "format": "bestvideo+bestaudio/best/any",
+            "format": "bestvideo[height<=2160]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/any",
+            "format_sort": ["res:1080", "res", "fps", "vcodec:h264", "acodec:aac"],
             "extractor_args": {
                 "youtube": {
                     "player_client": (["web"] + ["web_creator", "mweb", "web_music", "web_embedded"]) if (_HAS_DENO or _HAS_NODE) else ["web_creator", "mweb", "web_music", "web_embedded"],
@@ -616,7 +615,7 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
             job["stage"] = "Failed"
             return
         if format_error:
-            fallback_formats = ["bestvideo+bestaudio/best", "best", "bestvideo/best", "worst"]
+            fallback_formats = ["bestvideo+bestaudio/best", "bestvideo[height<=1080]+bestaudio/best", "best", "bestvideo/best"]
             success = False
             for fallback_fmt in fallback_formats:
                 print(f"Trying fallback format: {fallback_fmt}")
@@ -632,6 +631,7 @@ def run_download(job_id, url, fmt, mp3, folder, platform='android'):
                         else {"jsc": {"js_runtimes": ["node:" + (shutil.which("node") or "node")], "remote_components": ["ejs:github"]}} if _HAS_NODE
                         else {} ),
                 }
+                ydl_opts_fallback["format_sort"] = ["res:1080", "res", "fps", "vcodec:h264", "acodec:aac"]
                 if _HAS_DENO or _HAS_NODE:
                     ydl_opts_fallback["remote_components"] = ["ejs:github"]
                 try:
@@ -898,6 +898,29 @@ def download_job(job_id):
             return send_file(filepath, as_attachment=True, attachment_filename=filename)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ─── New endpoint: delete job and cleanup file after device download ────────
+
+@app.route("/delete_job/<job_id>", methods=["POST", "DELETE"])
+def delete_job(job_id):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    
+    # Delete the file if it exists
+    filepath = job.get("filepath")
+    if filepath and os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+            print(f"Deleted file: {filepath}")
+        except Exception as e:
+            print(f"Failed to delete file {filepath}: {e}")
+    
+    # Remove job from memory
+    del jobs[job_id]
+    print(f"Deleted job: {job_id}")
+    
+    return jsonify({"status": "deleted"})
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -1377,4 +1400,6 @@ if __name__ == "__main__":
   ==================
   Press Ctrl+C to stop.
 """)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    # Use PORT env var for Render.com, default to 5000 for local
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
