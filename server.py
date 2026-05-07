@@ -1145,6 +1145,19 @@ def index():
     html = html.replace('value="" autocomplete', f'value="{server_origin}" autocomplete')
     return html
 
+@app.route("/login", methods=["GET"])
+def login_page():
+    """Serve the login page"""
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "login.html")
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    return html
+
+@app.route("/login.html", methods=["GET"])
+def login_page_alias():
+    """Serve the login page (alternative URL)"""
+    return login_page()
+
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok"})

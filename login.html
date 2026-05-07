@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeSave - Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg2: rgba(30, 41, 59, 0.6);
+      --bg3: rgba(51, 65, 85, 0.4);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --muted2: #64748b;
+      --accent: #7c3aed;
+      --accent2: #06b6d4;
+      --accent3: #8b5cf6;
+      --error: #ef4444;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --border: rgba(148, 163, 184, 0.15);
+      --border2: rgba(148, 163, 184, 0.08);
+      --card-r: 16px;
+      --card-r-sm: 10px;
+    }
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    /* Background effects */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse at 20% 20%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    
+    .particles {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(124, 58, 237, 0.4);
+      border-radius: 50%;
+      animation: float 20s infinite linear;
+    }
+    
+    @keyframes float {
+      0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; }
+    }
+    
+    /* Auth Container */
+    .auth-container {
+      position: relative;
+      z-index: 10;
+      width: 90%;
+      max-width: 420px;
+    }
+    
+    .auth-modal {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      border-radius: 24px;
+      padding: 48px 36px;
+      box-shadow: 
+        0 25px 50px -12px rgba(0, 0, 0, 0.5),
+        0 0 100px rgba(124, 58, 237, 0.15);
+      position: relative;
+      overflow: hidden;
+      animation: modalIn 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+    
+    .auth-modal-glow {
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.1) 0%, transparent 50%);
+      animation: glowRotate 10s linear infinite;
+      pointer-events: none;
+    }
+    
+    @keyframes glowRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    .auth-content {
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* Logo */
+    .auth-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .auth-logo-icon {
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      margin: 0 auto 16px;
+      box-shadow: 0 8px 32px rgba(124, 58, 237, 0.4);
+      animation: logoPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes logoPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(124, 58, 237, 0.4); }
+      50% { transform: scale(1.05); box-shadow: 0 12px 40px rgba(124, 58, 237, 0.6); }
+    }
+    
+    .auth-logo-text {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--text) 0%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 3px;
+    }
+    
+    /* Welcome */
+    .auth-welcome {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    
+    .auth-welcome h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 8px 0;
+    }
+    
+    .auth-welcome p {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 0;
+    }
+    
+    /* Forms */
+    .auth-form {
+      display: none;
+      flex-direction: column;
+      gap: 18px;
+      animation: formIn 0.4s ease;
+    }
+    
+    .auth-form.active {
+      display: flex;
+    }
+    
+    @keyframes formIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .input-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .input-optional {
+      font-weight: 400;
+      opacity: 0.6;
+    }
+    
+    .auth-input {
+      background: rgba(15, 23, 42, 0.6);
+      border: 2px solid rgba(124, 58, 237, 0.2);
+      border-radius: 12px;
+      padding: 14px 16px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.3s ease;
+      width: 100%;
+    }
+    
+    .auth-input:focus {
+      border-color: var(--accent);
+      background: rgba(15, 23, 42, 0.8);
+      box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1);
+    }
+    
+    .auth-input::placeholder {
+      color: var(--muted);
+    }
+    
+    /* Buttons */
+    .auth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+      border: none;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .auth-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .auth-btn.primary {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      color: white;
+      box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+      margin-top: 8px;
+    }
+    
+    .auth-btn.primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(124, 58, 237, 0.5);
+    }
+    
+    .auth-btn.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 2px solid rgba(124, 58, 237, 0.3);
+    }
+    
+    .auth-btn.secondary:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(124, 58, 237, 0.1);
+    }
+    
+    .btn-icon {
+      transition: transform 0.3s ease;
+    }
+    
+    .auth-btn:hover .btn-icon {
+      transform: translateX(4px);
+    }
+    
+    /* Divider */
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 8px 0;
+    }
+    
+    .auth-divider::before,
+    .auth-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.3), transparent);
+    }
+    
+    .auth-divider span {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: rgba(30, 41, 59, 0.95);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      border-radius: 12px;
+      padding: 14px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      z-index: 10000;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    
+    .toast.success {
+      border-color: var(--success);
+      color: var(--success);
+    }
+    
+    .toast.error {
+      border-color: var(--error);
+      color: var(--error);
+    }
+    
+    /* Responsive */
+    @media (max-width: 480px) {
+      .auth-modal {
+        padding: 36px 24px;
+      }
+      
+      .auth-logo-text {
+        font-size: 24px;
+      }
+      
+      .auth-welcome h1 {
+        font-size: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-mesh"></div>
+  <div class="particles" id="particles"></div>
+  <div class="toast" id="toast"></div>
+  
+  <div class="auth-container">
+    <div class="auth-modal">
+      <div class="auth-modal-glow"></div>
+      <div class="auth-content">
+        <!-- Logo -->
+        <div class="auth-logo">
+          <div class="auth-logo-icon">🌟</div>
+          <div class="auth-logo-text">VIBESAVE</div>
+        </div>
+        
+        <!-- Welcome -->
+        <div class="auth-welcome">
+          <h1 id="welcomeTitle">Welcome Back</h1>
+          <p id="welcomeSubtitle">Sign in to start downloading</p>
+        </div>
+        
+        <!-- Login Form -->
+        <form id="loginForm" class="auth-form active" onsubmit="event.preventDefault(); login();">
+          <div class="input-group">
+            <label class="input-label">Username</label>
+            <input type="text" id="loginUsername" class="auth-input" placeholder="Enter your username" autocomplete="username" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Password</label>
+            <input type="password" id="loginPassword" class="auth-input" placeholder="Enter your password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="auth-btn primary" id="loginBtn">
+            <span>Sign In</span>
+            <span class="btn-icon">→</span>
+          </button>
+          <div class="auth-divider">
+            <span>or</span>
+          </div>
+          <button type="button" class="auth-btn secondary" onclick="showRegister()">
+            Create New Account
+          </button>
+        </form>
+        
+        <!-- Register Form -->
+        <form id="registerForm" class="auth-form" onsubmit="event.preventDefault(); register();">
+          <div class="input-group">
+            <label class="input-label">Username</label>
+            <input type="text" id="regUsername" class="auth-input" placeholder="Choose a username" autocomplete="username" required>
+          </div>
+          <div class="input-group">
+            <label class="input-label">Email <span class="input-optional">(optional)</span></label>
+            <input type="email" id="regEmail" class="auth-input" placeholder="your@email.com">
+          </div>
+          <div class="input-group">
+            <label class="input-label">Password</label>
+            <input type="password" id="regPassword" class="auth-input" placeholder="Min 6 characters" autocomplete="new-password" required minlength="6">
+          </div>
+          <button type="submit" class="auth-btn primary" id="registerBtn">
+            <span>Create Account</span>
+            <span class="btn-icon">→</span>
+          </button>
+          <div class="auth-divider">
+            <span>or</span>
+          </div>
+          <button type="button" class="auth-btn secondary" onclick="showLogin()">
+            Already have an account?
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Server URL - same as main app
+    const serverUrl = 'https://vibesave.onrender.com';
+    
+    // Check if already logged in
+    const authToken = localStorage.getItem('vibesave_token');
+    if (authToken) {
+      // Verify token and redirect
+      fetch(`${serverUrl}/auth/profile`, {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      }).then(r => {
+        if (r.ok) {
+          // Already logged in, go to app
+          window.location.href = serverUrl + '/';
+        }
+      }).catch(() => {
+        // Token invalid, stay on login page
+        localStorage.removeItem('vibesave_token');
+        localStorage.removeItem('vibesave_user');
+      });
+    }
+    
+    // Generate device ID
+    function getDeviceId() {
+      let deviceId = localStorage.getItem('vibesave_device_id');
+      if (!deviceId) {
+        deviceId = 'dev_' + Math.random().toString(36).substr(2, 16);
+        localStorage.setItem('vibesave_device_id', deviceId);
+      }
+      return deviceId;
+    }
+    
+    // Show/Hide forms
+    function showLogin() {
+      document.getElementById('loginForm').classList.add('active');
+      document.getElementById('registerForm').classList.remove('active');
+      document.getElementById('welcomeTitle').textContent = 'Welcome Back';
+      document.getElementById('welcomeSubtitle').textContent = 'Sign in to start downloading';
+    }
+    
+    function showRegister() {
+      document.getElementById('loginForm').classList.remove('active');
+      document.getElementById('registerForm').classList.add('active');
+      document.getElementById('welcomeTitle').textContent = 'Create Account';
+      document.getElementById('welcomeSubtitle').textContent = 'Join VibeSave to download videos';
+    }
+    
+    // Toast
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'toast ' + type;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+    
+    // Login
+    async function login() {
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const deviceId = getDeviceId();
+      
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>Signing in...</span>';
+      
+      try {
+        const resp = await fetch(`${serverUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, device_id: deviceId })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+          localStorage.setItem('vibesave_token', data.token);
+          localStorage.setItem('vibesave_user', JSON.stringify(data.user));
+          showToast('Welcome back, ' + data.user.username + '!', 'success');
+          setTimeout(() => {
+            window.location.href = serverUrl + '/';
+          }, 1000);
+        } else {
+          showToast(data.error || 'Login failed', 'error');
+        }
+      } catch (err) {
+        showToast('Could not connect to server', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Sign In</span><span class="btn-icon">→</span>';
+      }
+    }
+    
+    // Register
+    async function register() {
+      const username = document.getElementById('regUsername').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const deviceId = getDeviceId();
+      
+      const btn = document.getElementById('registerBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>Creating...</span>';
+      
+      try {
+        const resp = await fetch(`${serverUrl}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, email, password, device_id: deviceId })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+          localStorage.setItem('vibesave_token', data.token);
+          localStorage.setItem('vibesave_user', JSON.stringify(data.user));
+          showToast('Account created successfully!', 'success');
+          setTimeout(() => {
+            window.location.href = serverUrl + '/';
+          }, 1000);
+        } else {
+          showToast(data.error || 'Registration failed', 'error');
+        }
+      } catch (err) {
+        showToast('Could not connect to server', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Create Account</span><span class="btn-icon">→</span>';
+      }
+    }
+    
+    // Initialize particles
+    (function initParticles() {
+      const container = document.getElementById('particles');
+      const count = 30;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDuration = (Math.random() * 15 + 20) + 's';
+        p.style.animationDelay = (Math.random() * 20) + 's';
+        p.style.opacity = Math.random() * 0.5 + 0.3;
+        container.appendChild(p);
+      }
+    })();
+  </script>
+</body>
+</html>
